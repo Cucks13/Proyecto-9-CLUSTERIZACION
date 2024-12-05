@@ -62,7 +62,7 @@ class Exploracion:
             - None.
         """
         print("5 registros aleatorios:")
-        display(self.dataframe.sample(5))
+        display(self.dataframe.sample(5)) # type: ignore
         print("\n")
 
         print("Información general del DataFrame:")
@@ -74,13 +74,13 @@ class Exploracion:
         print("\n")
 
         print("Estadísticas descriptivas de las columnas numéricas:")
-        display(self.dataframe.describe().T)
+        display(self.dataframe.describe().T) # type: ignore
         print("\n")
 
         print("Estadísticas descriptivas de las columnas categóricas:")
         categorical_columns = self.dataframe.select_dtypes(include=['object']).columns
         if len(categorical_columns) > 0:
-            display(self.dataframe[categorical_columns].describe().T)
+            display(self.dataframe[categorical_columns].describe().T) # type: ignore
         else:
             print("No hay columnas categóricas en el DataFrame.")
         print("\n")
@@ -96,7 +96,7 @@ class Exploracion:
                 print(self.dataframe[col].value_counts())
         
         print("Matriz de correlación entre variables numéricas:")
-        display(self.dataframe.corr(numeric_only=True))
+        display(self.dataframe.corr(numeric_only=True)) # type: ignore
         print("\n")
 
     def visualizar_numericas(self):
