@@ -355,47 +355,81 @@ class Clustering:
             axes[indice].set_xlabel('Muestras')
             axes[indice].set_ylabel('Distancias')
     
+    from sklearn.metrics import silhouette_score, davies_bouldin_score
+
     def modelo_aglomerativo(self, num_clusters, metodo_distancias, dataframe_original):
         """
         Aplica clustering aglomerativo al DataFrame y añade las etiquetas de clusters al DataFrame original.
 
         Params:
-            - num_clusters : int. Número de clusters a formar.
-            - metodo_distancias : str. Método para calcular las distancias entre los clusters.
-            - dataframe_original : pd.DataFrame. El DataFrame original al que se le añadirán las etiquetas de clusters.
+        - num_clusters : int. Número de clusters a formar.
+        - metodo_distancias : str. Método para calcular las distancias entre los clusters.
+        - dataframe_original : pd.DataFrame. El DataFrame original al que se le añadirán las etiquetas de clusters.
 
         Returns:
-            - pd.DataFrame. El DataFrame original con una nueva columna para las etiquetas de clusters.
+        - pd.DataFrame. El DataFrame original con una nueva columna para las etiquetas de clusters.
+        - dict. Cardinalidad de cada cluster.
+        - float. Silhouette Score.
+        - float. Davies-Bouldin Index.
         """
         modelo = AgglomerativeClustering(
             linkage=metodo_distancias,
             distance_threshold=None,
             n_clusters=num_clusters
         )
-        aglo_fit = modelo.fit(self.dataframe)
-        labels = aglo_fit.labels_
+        algo_fit = modelo.fit(self.dataframe)
+        labels = algo_fit.labels_
         dataframe_original["clusters_agglomerative"] = labels.astype(str)
-        return dataframe_original
+        
+        # Calcular métricas de evaluación
+        silhouette_avg = silhouette_score(self.dataframe, labels)
+        davies_bouldin_avg = davies_bouldin_score(self.dataframe, labels)
+        
+        # Calcular cardinalidad (cantidad de elementos por cluster)
+        cardinalidad = dataframe_original["clusters_agglomerative"].value_counts().to_dict()
+        
+        print(f"Silhouette Score: {silhouette_avg}")
+        print(f"Davies-Bouldin Index: {davies_bouldin_avg}")
+        print(f"Cardinalidad por cluster: {cardinalidad}")
+        
+        return dataframe_original, cardinalidad, silhouette_avg, davies_bouldin_avg
+
     
+
+
     def modelo_divisivo(self, dataframe_original, threshold=0.5, max_clusters=5):
         """
-        Implementa el clustering jerárquico divisivo.
+        Realiza clustering divisivo sobre un DataFrame y añade las etiquetas de clusters al DataFrame original.
 
         Params:
-            - dataframe_original : pd.DataFrame. El DataFrame original al que se le añadirán las etiquetas de clusters.
-            - threshold : float, optional, default: 0.5. Umbral para decidir cuándo dividir un cluster.
-            - max_clusters : int, optional, default: 5. Número máximo de clusters deseados.
+        - dataframe_original: pd.DataFrame. El DataFrame original que será clusterizado.
+        - threshold: float. Umbral mínimo de Silhouette Score para continuar dividiendo clusters.
+        - max_clusters: int. Número máximo de clusters permitidos.
 
         Returns:
-            - pd.DataFrame. El DataFrame original con una nueva columna para las etiquetas de los clusters.
+        - pd.DataFrame. El DataFrame original con una nueva columna para las etiquetas de clusters divisivos.
         """
-        def divisive_clustering(data, current_cluster, cluster_labels):
+
+        def divisive_clustering(data, current_cluster, cluster_labels, max_clusters, threshold):
+            """
+            Realiza clustering divisivo recursivo para dividir los datos en clusters.
+
+            Params:
+            - data: np.ndarray. Datos que se están agrupando.
+            - current_cluster: np.ndarray. Etiquetas actuales de los clusters.
+            - cluster_labels: np.ndarray. Etiquetas asignadas a los datos.
+            - max_clusters: int. Número máximo de clusters permitidos.
+            - threshold: float. Umbral mínimo de Silhouette Score para dividir.
+
+            Returns:
+            - np.ndarray. Etiquetas finales de clusters.
+            """
             # Si el número de clusters actuales es mayor o igual al máximo permitido, detener la división
             if len(set(current_cluster)) >= max_clusters:
                 return current_cluster
 
             # Aplicar KMeans con 2 clusters
-            kmeans = KMeans(n_clusters=2)
+            kmeans = KMeans(n_clusters=2, random_state=42)
             kmeans.fit(data)
             labels = kmeans.labels_
 
@@ -409,30 +443,53 @@ class Clustering:
             # Crear nuevas etiquetas de clusters
             new_cluster_labels = current_cluster.copy()
             max_label = max(current_cluster)
-
-            # Asignar nuevas etiquetas incrementadas para cada subcluster
             for label in set(labels):
                 cluster_indices = np.where(labels == label)[0]
-                new_label = max_label + 1 + label
+
+                # Validar que los índices no estén fuera de rango
+                if len(cluster_indices) == 0 or np.any(cluster_indices >= len(data)):
+                    continue
+
+                new_label = max_label + 1
+                max_label = new_label
                 new_cluster_labels[cluster_indices] = new_label
 
             # Aplicar recursión para seguir dividiendo los subclusters
             for new_label in set(new_cluster_labels):
                 cluster_indices = np.where(new_cluster_labels == new_label)[0]
-                new_cluster_labels = divisive_clustering(data[cluster_indices], new_cluster_labels, new_cluster_labels)
+
+                # Asegurar que no intentamos dividir clusters con 1 solo elemento
+                if len(cluster_indices) <= 1:
+                    continue
+
+                # Llamada recursiva
+                new_cluster_labels[cluster_indices] = divisive_clustering(
+                    data[cluster_indices],
+                    new_cluster_labels[cluster_indices],
+                    new_cluster_labels[cluster_indices],
+                    max_clusters,
+                    threshold
+                )
 
             return new_cluster_labels
 
         # Inicializar las etiquetas de clusters con ceros
-        initial_labels = np.zeros(len(self.dataframe))
+        initial_labels = np.zeros(len(self.dataframe), dtype=int)
 
         # Llamar a la función recursiva para iniciar el clustering divisivo
-        final_labels = divisive_clustering(self.dataframe.values, initial_labels, initial_labels)
+        final_labels = divisive_clustering(
+            self.dataframe.values,
+            initial_labels,
+            initial_labels,
+            max_clusters=max_clusters,  # Define tu número máximo de clusters
+            threshold=threshold         # Define tu umbral de Silhouette Score
+        )
 
         # Añadir las etiquetas de clusters al DataFrame original
         dataframe_original["clusters_divisive"] = final_labels.astype(int).astype(str)
 
         return dataframe_original
+
 
     def modelo_espectral(self, dataframe_original, n_clusters=3, assign_labels='kmeans'):
         """
